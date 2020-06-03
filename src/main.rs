@@ -1,12 +1,25 @@
-use std::env;
-
 extern crate ctrlc;
+
+use std::{
+    env,
+    sync::{
+        Mutex, Arc
+    }
+};
+
+use rusqlite::{
+    params,
+    Connection
+};
+
+type SqliteResult<T> = rusqlite::Result<T>;
 
 use serenity::{
     prelude::*,
     model::{
-        channel::Message, 
-        gateway::{Ready, Activity}
+        channel::{Message, Reaction},
+        gateway::{Ready, Activity},
+        id::{UserId, GuildId, MessageId}
     },
     framework::standard::{
         StandardFramework, CommandResult,
@@ -18,26 +31,75 @@ use serenity::{
 #[commands(ping)]
 struct UserManagement;
 
-struct Handler;
+struct Handler {
+    db: Arc<Mutex<Connection>>
+}
+
+type DynResult<T> = Result<T, Box<dyn std::error::Error>>;
 
 impl EventHandler for Handler {
     fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} ({}) is connected!", ready.user.name, ready.user.id);
-        ctx.set_activity(Activity::playing("with cat toys"))
+        ctx.set_activity(Activity::playing("with cat toys"));
+    }
+
+    fn reaction_add(&self, ctx: Context, rxn: Reaction) {
+        let guild_id = match rxn.guild_id {
+            Some(x) => x,
+            None => return
+        };
+
+        let result = {
+            let db_lock = self.db.lock().unwrap();
+
+            let signed_guild_id = guild_id.0 as i64;
+
+            let mut stmt = db_lock.prepare("SELECT message_id FROM guild_configs WHERE guild_id = ?1").unwrap();
+            stmt.query_row(params![signed_guild_id], |row| -> SqliteResult<MessageId> {
+                row.get::<_, i64>(0).map(|x: i64| MessageId(x as u64))
+            })
+        };
+
+        if let Ok(x) = result {
+            if x == rxn.message_id {
+                let msg_fn: Box<dyn Fn(&str)> = match rxn.user_id.create_dm_channel(&ctx) {
+                    Err(x) => {
+                        println!("Error {} while creating DM channel for user {}.", x, rxn.user_id);
+                        Box::from(|_: &str| {})
+                    },
+                    Ok(channel) => {
+                        let ctx_c = ctx.clone();
+                        let user_id_c = rxn.user_id.clone();
+                        Box::from(move |msg: &str| {
+                            if let Err(x) = channel.say(&ctx_c, msg) {
+                                println!("Error {} while sending message into DM with user {}.", x, user_id_c);
+                            }
+                        })
+                    }
+                };
+                assign_guest(ctx, rxn.user_id, guild_id, self.db.clone(), msg_fn);
+            }
+        }
     }
 }
 
 fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
-    if let Err(_x) = msg.channel_id.say(ctx, format!("Command `{}` not found.", cmd)) {
+    if let Err(_x) = msg.channel_id.say(&ctx, format!("Command `{}` not found.", cmd)) {
         println!("Couldn't send reply in {}.", msg.channel_id);
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn assign_guest(ctx: Context, uid: UserId, gid: GuildId, db: Arc<Mutex<Connection>>, f: impl Fn(&str)) {
+    
+}
+
+fn main() -> DynResult<()> {
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN")?;
 
-    let mut client = Client::new(&token, Handler)?;
+    let db_orig = Arc::from(Mutex::from(Connection::open("db.db")?));
+
+    let mut client = Client::new(&token, Handler {db: db_orig.clone()})?;
 
     client.with_framework(StandardFramework::new()
         .configure(|c| c.prefix("?"))
