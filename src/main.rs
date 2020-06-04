@@ -87,7 +87,7 @@ fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
     }
 }
 
-fn assign_guest(ctx: Context, uid: UserId, gid: GuildId, db: Arc<Mutex<Connection>>, f: impl Fn(&str)) {
+fn assign_guest(_ctx: Context, _uid: UserId, _gid: GuildId, _db: Arc<Mutex<Connection>>, _f: impl Fn(&str)) {
     
 }
 
