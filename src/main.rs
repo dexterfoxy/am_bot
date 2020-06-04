@@ -82,22 +82,24 @@ impl EventHandler for Handler {
 }
 
 fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
-    if let Err(_x) = msg.channel_id.say(&ctx, format!("Command `{}` not found.", cmd)) {
+    if let Err(_) = msg.channel_id.say(&ctx, format!("Command `{}` not found.", cmd)) {
         println!("Couldn't send reply in {}.", msg.channel_id);
     }
 }
 
 fn assign_guest(_ctx: Context, _uid: UserId, _gid: GuildId, _db: Arc<Mutex<Connection>>, _f: impl Fn(&str)) {
-    
+    _f("Hello there ya fucker!");
 }
 
 fn main() {
     // Configure the client with your Discord bot token in the environment.
     let token = env::var("DISCORD_TOKEN").expect("Error when reading token!");
+    let db_file = env::var("DB_FILE").expect("Error while getting database file!");
 
-    let db_orig = Arc::from(Mutex::from(Connection::open("db.db").expect("Error while opening database!")));
-
-    let mut client = Client::new(&token, Handler {db: db_orig.clone()}).expect("Error while creating client!");
+    let mut client = {
+        let db_orig = Arc::from(Mutex::from(Connection::open(db_file).expect("Error while opening database!")));
+        Client::new(&token, Handler {db: db_orig}).expect("Error while creating client!")
+    };
 
     client.with_framework(StandardFramework::new()
         .configure(|c| c.prefix("?"))
@@ -105,7 +107,7 @@ fn main() {
         .unrecognised_command(invalid_command)
     );
 
-    let shard_manager_c = client.shard_manager.clone();
+    let shard_manager_c = Arc::clone(&client.shard_manager);
     ctrlc::set_handler(move || {
         shard_manager_c.lock().shutdown_all();
     }).expect("Error while setting SIGINT handler!");
