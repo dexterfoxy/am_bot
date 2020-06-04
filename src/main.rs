@@ -35,8 +35,6 @@ struct Handler {
     db: Arc<Mutex<Connection>>
 }
 
-type DynResult<T> = Result<T, Box<dyn std::error::Error>>;
-
 impl EventHandler for Handler {
     fn ready(&self, ctx: Context, ready: Ready) {
         println!("{} ({}) is connected!", ready.user.name, ready.user.id);
@@ -93,13 +91,13 @@ fn assign_guest(ctx: Context, uid: UserId, gid: GuildId, db: Arc<Mutex<Connectio
     
 }
 
-fn main() -> DynResult<()> {
+fn main() {
     // Configure the client with your Discord bot token in the environment.
-    let token = env::var("DISCORD_TOKEN")?;
+    let token = env::var("DISCORD_TOKEN").expect("Error when reading token!");
 
-    let db_orig = Arc::from(Mutex::from(Connection::open("db.db")?));
+    let db_orig = Arc::from(Mutex::from(Connection::open("db.db").expect("Error while opening database!")));
 
-    let mut client = Client::new(&token, Handler {db: db_orig.clone()})?;
+    let mut client = Client::new(&token, Handler {db: db_orig.clone()}).expect("Error while creating client!");
 
     client.with_framework(StandardFramework::new()
         .configure(|c| c.prefix("?"))
@@ -107,16 +105,14 @@ fn main() -> DynResult<()> {
         .unrecognised_command(invalid_command)
     );
 
-    let shard_manager = client.shard_manager.clone();
+    let shard_manager_c = client.shard_manager.clone();
     ctrlc::set_handler(move || {
-        shard_manager.lock().shutdown_all();
-    })?;
+        shard_manager_c.lock().shutdown_all();
+    }).expect("Error while setting SIGINT handler!");
 
     if let Err(msg) = client.start() {
         println!("Error occured on client: {:?}", msg);
     }
-
-    Ok(())
 }
 
 #[command]
