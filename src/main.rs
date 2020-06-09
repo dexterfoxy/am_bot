@@ -42,13 +42,18 @@ impl EventHandler for Handler {
     }
 
     fn reaction_add(&self, ctx: Context, rxn: Reaction) {
+        let current_user = ctx.http.get_current_user().expect("Couldn't get user info.");
+        if current_user.id == rxn.user_id {
+            return;
+        }
+
         let guild_id = match rxn.guild_id {
             Some(x) => x,
             None => return
         };
 
         let result = {
-            let db_lock = self.db.lock().unwrap();
+            let db_lock = self.db.lock().expect("Couldn't lock DB.");
 
             let signed_guild_id = guild_id.0 as i64;
 
@@ -60,7 +65,11 @@ impl EventHandler for Handler {
 
         if let Ok(x) = result {
             if x == rxn.message_id {
-                let msg_fn: Box<dyn Fn(&str)> = match rxn.user_id.create_dm_channel(&ctx) {
+                if let Err(e) = rxn.delete(&ctx) {
+                    println!("Couldn't delete reaction: {}", e);
+                }
+
+                let msg_fn: Box<dyn FnMut(&str)> = match rxn.user_id.create_dm_channel(&ctx) {
                     Err(x) => {
                         println!("Error {} while creating DM channel for user {}.", x, rxn.user_id);
                         Box::from(|_: &str| {})
@@ -75,6 +84,7 @@ impl EventHandler for Handler {
                         })
                     }
                 };
+
                 assign_guest(ctx, rxn.user_id, guild_id, self.db.clone(), msg_fn);
             }
         }
@@ -87,14 +97,14 @@ fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
     }
 }
 
-fn assign_guest(_ctx: Context, _uid: UserId, _gid: GuildId, _db: Arc<Mutex<Connection>>, _f: impl Fn(&str)) {
+fn assign_guest(_ctx: Context, _uid: UserId, _gid: GuildId, _db: Arc<Mutex<Connection>>, mut _f: impl FnMut(&str)) {
     _f("Hello there ya fucker!");
 }
 
 fn main() {
     // Configure the client with your Discord bot token in the environment.
-    let token = env::var("DISCORD_TOKEN").expect("Error when reading token!");
-    let db_file = env::var("DB_FILE").expect("Error while getting database file!");
+    let token = env::var("DISCORD_TOKEN").expect("Error while reading DISCORD_TOKEN! Set the environment variable.");
+    let db_file = env::var("DB_FILE").expect("Error while reading DB_FILE! Set the environment variable.");
 
     let mut client = {
         let db_orig = Arc::from(Mutex::from(Connection::open(db_file).expect("Error while opening database!")));
