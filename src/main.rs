@@ -1,9 +1,17 @@
 extern crate ctrlc;
 
+mod unwrap_ext;
+
+use crate::unwrap_ext::*;
+
 use std::{
     env,
     sync::{
         Mutex, Arc
+    },
+    time::{
+        Duration,
+        SystemTime
     }
 };
 
@@ -31,18 +39,24 @@ use serenity::{
 #[commands(ping)]
 struct UserManagement;
 
-struct Handler {
-    db: Arc<Mutex<Connection>>
+struct Handler;
+
+static mut DB: Option<Mutex<Connection>> = None;
+
+// Simple wrapper to avoid ugly unsafe blocks
+#[inline(always)]
+fn get_db() -> &'static Mutex<Connection> {
+    unsafe {DB.unwrap_ref()} // Our own custom wrapper
 }
 
 impl EventHandler for Handler {
     fn ready(&self, ctx: Context, ready: Ready) {
-        println!("{} ({}) is connected!", ready.user.name, ready.user.id);
-        ctx.set_activity(Activity::playing("with cat toys"));
+        eprintln!("{} ({}) is connected!", ready.user.name, ready.user.id);
+        ctx.set_activity(Activity::playing("with cat toys")); // TODO: Database entry for this
     }
 
     fn reaction_add(&self, ctx: Context, rxn: Reaction) {
-        let current_user = ctx.http.get_current_user().expect("Couldn't get user info.");
+        let current_user = ctx.http.get_current_user().expect("Error while getting user info.");
         if current_user.id == rxn.user_id {
             return;
         }
@@ -52,13 +66,13 @@ impl EventHandler for Handler {
             None => return
         };
 
+        let s_gid = guild_id.0 as i64;
+
         let result = {
-            let db_lock = self.db.lock().expect("Couldn't lock DB.");
+            let db_lock = get_db().lock().expect("Error while locking DB.");
 
-            let signed_guild_id = guild_id.0 as i64;
-
-            let mut stmt = db_lock.prepare("SELECT message_id FROM guild_configs WHERE guild_id = ?1").unwrap();
-            stmt.query_row(params![signed_guild_id], |row| -> SqliteResult<MessageId> {
+            let mut stmt = db_lock.prepare("SELECT message_id FROM guild_configs WHERE guild_id = ?1").expect("Prepare failed.");
+            stmt.query_row(params![s_gid], |row| -> SqliteResult<MessageId> {
                 row.get::<_, i64>(0).map(|x: i64| MessageId(x as u64))
             })
         };
@@ -66,26 +80,26 @@ impl EventHandler for Handler {
         if let Ok(x) = result {
             if x == rxn.message_id {
                 if let Err(e) = rxn.delete(&ctx) {
-                    println!("Couldn't delete reaction: {}", e);
+                    eprintln!("Couldn't delete reaction: {}", e);
                 }
 
                 let msg_fn: Box<dyn FnMut(&str)> = match rxn.user_id.create_dm_channel(&ctx) {
                     Err(x) => {
-                        println!("Error {} while creating DM channel for user {}.", x, rxn.user_id);
+                        eprintln!("Error '{:?}' while creating DM channel for user {}.", x, rxn.user_id);
                         Box::from(|_: &str| {})
                     },
                     Ok(channel) => {
-                        let ctx_c = ctx.clone();
+                        let http_c = ctx.http.clone();
                         let user_id_c = rxn.user_id.clone();
                         Box::from(move |msg: &str| {
-                            if let Err(x) = channel.say(&ctx_c, msg) {
-                                println!("Error {} while sending message into DM with user {}.", x, user_id_c);
+                            if let Err(x) = channel.say(&http_c, msg) {
+                                eprintln!("Error '{:?}' while sending message into DM with user {}.", x, user_id_c);
                             }
                         })
                     }
-                };
+                }; // TODO: Get rid of the fuckery above and make a function for it
 
-                assign_guest(ctx, rxn.user_id, guild_id, self.db.clone(), msg_fn);
+                assign_guest(ctx, rxn.user_id, guild_id, msg_fn);
             }
         }
     }
@@ -93,42 +107,62 @@ impl EventHandler for Handler {
 
 fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
     if let Err(_) = msg.channel_id.say(&ctx, format!("Command `{}` not found.", cmd)) {
-        println!("Couldn't send reply in {}.", msg.channel_id);
+        eprintln!("Couldn't send reply in {}.", msg.channel_id);
     }
 }
 
-fn assign_guest(_ctx: Context, _uid: UserId, _gid: GuildId, _db: Arc<Mutex<Connection>>, mut _f: impl FnMut(&str)) {
-    _f("Hello there ya fucker!");
+fn assign_guest(_ctx: Context, uid: UserId, gid: GuildId, mut _f: impl FnMut(&str)) {
+    let s_gid = gid.0 as i64;
+    let s_uid = uid.0 as i64;
+
+    println!("{} {}", s_gid, s_uid);
+
+    let db_lock = get_db().lock().expect("Couldn't lock the database.");
+    
+    let _result = {
+        let mut stmt = db_lock.prepare("SELECT timestamp, expired FROM guests WHERE guild_id = ?1 AND user_id = ?2").expect("Error while preparing statement.");
+        stmt.query_row(params![s_gid, s_uid], |row| -> SqliteResult<(SystemTime, bool)> {
+            Ok((
+                SystemTime::UNIX_EPOCH.checked_add(
+                    Duration::from_secs(row.get::<_, i64>(0)? as u64)
+                ).expect("Error while adding time."), 
+                row.get::<_, i64>(1)? != 0
+            ))
+        })
+    }.expect("Error while reading database.");
+
 }
 
 fn main() {
-    // Configure the client with your Discord bot token in the environment.
-    let token = env::var("DISCORD_TOKEN").expect("Error while reading DISCORD_TOKEN! Set the environment variable.");
-    let db_file = env::var("DB_FILE").expect("Error while reading DB_FILE! Set the environment variable.");
+    // Environment variables to avoid hardcoding
+    let token   = env::var("DISCORD_TOKEN").expect("Error while reading DISCORD_TOKEN! Set the environment variable.");
+    let db_file = env::var("DB_FILE")      .expect("Error while reading DB_FILE! Set the environment variable.");
 
-    let mut client = {
-        let db_orig = Arc::from(Mutex::from(Connection::open(db_file).expect("Error while opening database!")));
-        Client::new(&token, Handler {db: db_orig}).expect("Error while creating client!")
-    };
+    // Unsafe block needed for assignment
+    // Wrapper function above for easy mutex access
+    unsafe {DB = Some(Mutex::from(Connection::open(db_file).expect("Error while opening database.")));} 
+    
+    // Token is never stored on disk
+    let mut client = Client::new(&token, Handler {/* Nothing here at the moment */}).expect("Error while creating client.");
 
     client.with_framework(StandardFramework::new()
-        .configure(|c| c.prefix("?"))
+        .configure(|c| c.prefix("?")) // Possibly, a per-guild config would be ideal
         .group(&USERMANAGEMENT_GROUP)
         .unrecognised_command(invalid_command)
     );
 
-    let shard_manager_c = Arc::clone(&client.shard_manager);
+    let shard_manager_c = Arc::clone(&client.shard_manager); // Moved out of scope by closure, no explicit mem::drop needed
     ctrlc::set_handler(move || {
         shard_manager_c.lock().shutdown_all();
-    }).expect("Error while setting SIGINT handler!");
+    }).expect("Error while setting SIGINT handler."); // TODO: Smoother shutdown on failure on all expects
 
     if let Err(msg) = client.start() {
-        println!("Error occured on client: {:?}", msg);
+        eprintln!("Error '{:?}' occured on client.", msg);
     }
 }
 
 #[command]
-fn ping(ctx: &mut Context, msg: &Message) -> CommandResult {
+fn ping(ctx: &mut Context, msg: &Message) -> CommandResult { // Testing command, really unnecessary
     msg.channel_id.say(ctx, "Pong!")?;
 
     Ok(())
