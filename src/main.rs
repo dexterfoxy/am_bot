@@ -21,6 +21,7 @@ use rusqlite::{
 };
 
 type SqliteResult<T> = rusqlite::Result<T>;
+type SqliteError = rusqlite::Error;
 
 use serenity::{
     prelude::*,
@@ -111,7 +112,7 @@ fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
     }
 }
 
-fn assign_guest(_ctx: Context, uid: UserId, gid: GuildId, mut _f: impl FnMut(&str)) {
+fn assign_guest(_ctx: Context, uid: UserId, gid: GuildId, mut f: impl FnMut(&str)) {
     let s_gid = gid.0 as i64;
     let s_uid = uid.0 as i64;
 
@@ -119,7 +120,7 @@ fn assign_guest(_ctx: Context, uid: UserId, gid: GuildId, mut _f: impl FnMut(&st
 
     let db_lock = get_db().lock().expect("Couldn't lock the database.");
     
-    let _result = {
+    let result = {
         let mut stmt = db_lock.prepare("SELECT timestamp, expired FROM guests WHERE guild_id = ?1 AND user_id = ?2").expect("Error while preparing statement.");
         stmt.query_row(params![s_gid, s_uid], |row| -> SqliteResult<(SystemTime, bool)> {
             Ok((
@@ -129,8 +130,17 @@ fn assign_guest(_ctx: Context, uid: UserId, gid: GuildId, mut _f: impl FnMut(&st
                 row.get::<_, i64>(1)? != 0
             ))
         })
-    }.expect("Error while reading database.");
+    };
 
+    if let Err(x) = result {
+        if let SqliteError::QueryReturnedNoRows = x {
+
+        }
+
+        panic!("Error '{}' while reading database.", x);
+    }
+
+    f("Sorry, but you cannot request guest access more than once on a single guild.");
 }
 
 fn main() {
