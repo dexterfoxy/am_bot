@@ -107,8 +107,8 @@ impl EventHandler for Handler {
 }
 
 fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
-    if let Err(_) = msg.channel_id.say(&ctx, format!("Command `{}` not found.", cmd)) {
-        eprintln!("Couldn't send reply in {}.", msg.channel_id);
+    if let Err(x) = msg.channel_id.say(&ctx, format!("Command `{}` not found.", cmd)) {
+        eprintln!("Error '{}' while sending reply in {}.", x, msg.channel_id);
     }
 }
 
@@ -136,11 +136,12 @@ fn assign_guest(_ctx: Context, uid: UserId, gid: GuildId, mut f: impl FnMut(&str
         if let SqliteError::QueryReturnedNoRows = x {
 
         }
-
-        panic!("Error '{}' while reading database.", x);
+        else {
+            panic!("Error '{}' while reading database.", x);
+        }
+    } else {
+        f("Sorry, but you cannot request guest access more than once on a single guild.");
     }
-
-    f("Sorry, but you cannot request guest access more than once on a single guild.");
 }
 
 fn main() {
@@ -164,7 +165,7 @@ fn main() {
     let shard_manager_c = Arc::clone(&client.shard_manager); // Moved out of scope by closure, no explicit mem::drop needed
     ctrlc::set_handler(move || {
         shard_manager_c.lock().shutdown_all();
-    }).expect("Error while setting SIGINT handler."); // TODO: Smoother shutdown on failure on all expects
+    }).expect("Error while setting SIGINT handler.");
 
     if let Err(msg) = client.start() {
         eprintln!("Error '{:?}' occured on client.", msg);
