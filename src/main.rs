@@ -21,7 +21,7 @@ use rusqlite::{
 };
 
 type SqliteResult<T> = rusqlite::Result<T>;
-type SqliteError = rusqlite::Error;
+type SqliteError     = rusqlite::Error;
 
 use serenity::{
     prelude::*,
@@ -81,10 +81,10 @@ impl EventHandler for Handler {
         if let Ok(x) = result {
             if x == rxn.message_id {
                 if let Err(e) = rxn.delete(&ctx) {
-                    eprintln!("Couldn't delete reaction: {}", e);
+                    eprintln!("Couldn't delete reaction: {:?}", e);
                 }
 
-                let msg_fn: Box<dyn FnMut(&str)> = match rxn.user_id.create_dm_channel(&ctx) {
+                let msg_fn: Box<dyn Fn(&str)> = match rxn.user_id.create_dm_channel(&ctx) {
                     Err(x) => {
                         eprintln!("Error '{:?}' while creating DM channel for user {}.", x, rxn.user_id);
                         Box::from(|_: &str| {})
@@ -108,11 +108,11 @@ impl EventHandler for Handler {
 
 fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
     if let Err(x) = msg.channel_id.say(&ctx, format!("Command `{}` not found.", cmd)) {
-        eprintln!("Error '{}' while sending reply in {}.", x, msg.channel_id);
+        eprintln!("Error '{:?}' while sending reply in {}.", x, msg.channel_id);
     }
 }
 
-fn assign_guest(_ctx: Context, uid: UserId, gid: GuildId, mut f: impl FnMut(&str)) {
+fn assign_guest(_ctx: Context, uid: UserId, gid: GuildId, f: impl Fn(&str)) {
     let s_gid = gid.0 as i64;
     let s_uid = uid.0 as i64;
 
@@ -135,8 +135,7 @@ fn assign_guest(_ctx: Context, uid: UserId, gid: GuildId, mut f: impl FnMut(&str
     if let Err(x) = result {
         if let SqliteError::QueryReturnedNoRows = x {
 
-        }
-        else {
+        } else {
             panic!("Error '{}' while reading database.", x);
         }
     } else {
