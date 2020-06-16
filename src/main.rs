@@ -33,8 +33,7 @@ use serenity::{
     framework::standard::{
         StandardFramework, CommandResult,
         macros::{command, group}
-    },
-    http::client::Http;
+    }
 };
 
 #[group]
@@ -43,13 +42,13 @@ struct UserManagement;
 
 struct Handler;
 
-static mut DB: Option<Mutex<Connection>> = None;
-// This ain't perfect, there's data storage in our client.
+// This ain't perfect, there's non-static data storage in our client.
 // However, ICBF to switch to that. get_db has an unused parameter for the time being.
+static mut DB: Option<Mutex<Connection>> = None;
 
 // Simple wrapper to avoid ugly unsafe blocks
 #[inline(always)]
-fn get_db(_l: &Arc<RwLock<ShareMap>>) -> &'static Mutex<Connection> {
+fn get_db(_l: impl AsRef<RwLock<ShareMap>>) -> &'static Mutex<Connection> {
     unsafe {DB.unwrap_ref()} // Our own custom wrapper
 }
 
@@ -151,6 +150,7 @@ fn main() {
 
     // Unsafe block needed for assignment
     // Wrapper function above for easy mutex access
+    // Gonna be replaced with a better solution anyway
     unsafe {DB = Some(Mutex::from(Connection::open(db_file).expect("Error while opening database.")));} 
     
     // Token is never stored on disk
