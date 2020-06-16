@@ -33,7 +33,8 @@ use serenity::{
     framework::standard::{
         StandardFramework, CommandResult,
         macros::{command, group}
-    }
+    },
+    http::client::Http;
 };
 
 #[group]
@@ -43,10 +44,12 @@ struct UserManagement;
 struct Handler;
 
 static mut DB: Option<Mutex<Connection>> = None;
+// This ain't perfect, there's data storage in our client.
+// However, ICBF to switch to that. get_db has an unused parameter for the time being.
 
 // Simple wrapper to avoid ugly unsafe blocks
 #[inline(always)]
-fn get_db() -> &'static Mutex<Connection> {
+fn get_db(_l: &Arc<RwLock<ShareMap>>) -> &'static Mutex<Connection> {
     unsafe {DB.unwrap_ref()} // Our own custom wrapper
 }
 
@@ -70,7 +73,7 @@ impl EventHandler for Handler {
         let s_gid = guild_id.0 as i64;
 
         let result = {
-            let db_lock = get_db().lock().expect("Error while locking DB.");
+            let db_lock = get_db(&ctx.data).lock().expect("Error while locking DB.");
 
             let mut stmt = db_lock.prepare("SELECT message_id FROM guild_configs WHERE guild_id = ?1").expect("Prepare failed.");
             stmt.query_row(params![s_gid], |row| -> SqliteResult<MessageId> {
@@ -112,21 +115,19 @@ fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
     }
 }
 
-fn assign_guest(_ctx: Context, uid: UserId, gid: GuildId, f: impl Fn(&str)) {
+fn assign_guest(ctx: Context, uid: UserId, gid: GuildId, f: impl Fn(&str)) {
     let s_gid = gid.0 as i64;
     let s_uid = uid.0 as i64;
 
     println!("{} {}", s_gid, s_uid);
 
-    let db_lock = get_db().lock().expect("Couldn't lock the database.");
+    let db_lock = get_db(&ctx.data).lock().expect("Couldn't lock the database.");
     
     let result = {
         let mut stmt = db_lock.prepare("SELECT timestamp, expired FROM guests WHERE guild_id = ?1 AND user_id = ?2").expect("Error while preparing statement.");
         stmt.query_row(params![s_gid, s_uid], |row| -> SqliteResult<(SystemTime, bool)> {
             Ok((
-                SystemTime::UNIX_EPOCH.checked_add(
-                    Duration::from_secs(row.get::<_, i64>(0)? as u64)
-                ).expect("Error while adding time."), 
+                SystemTime::UNIX_EPOCH + Duration::from_secs(row.get::<_, i64>(0)? as u64),
                 row.get::<_, i64>(1)? != 0
             ))
         })
