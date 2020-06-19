@@ -49,7 +49,7 @@ static mut DB: Option<Mutex<Connection>> = None;
 
 // Simple wrapper to avoid ugly unsafe blocks
 #[inline(always)]
-fn get_db(_l: impl AsRef<RwLock<ShareMap>>) -> &'static Mutex<Connection> {
+fn get_db(_: impl AsRef<RwLock<ShareMap>>) -> &'static Mutex<Connection> {
     unsafe {DB.as_ref().unwrap()} // Our own custom wrapper
 }
 
