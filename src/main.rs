@@ -41,8 +41,6 @@ use serenity::{
 #[commands(ping)]
 struct UserManagement;
 
-struct Handler;
-
 // This ain't perfect, there's non-static data storage in our client.
 // However, ICBF to switch to that. get_db has an unused parameter for the time being.
 static mut DB: Option<Mutex<Connection>> = None;
@@ -50,9 +48,10 @@ static mut DB: Option<Mutex<Connection>> = None;
 // Simple wrapper to avoid ugly unsafe blocks
 #[inline(always)]
 fn get_db(_: impl AsRef<RwLock<ShareMap>>) -> &'static Mutex<Connection> {
-    unsafe {DB.as_ref().unwrap()} // Our own custom wrapper
+    unsafe {DB.as_ref().unwrap()}
 }
 
+struct Handler;
 impl EventHandler for Handler {
     fn ready(&self, ctx: Context, ready: Ready) {
         eprintln!("{} ({}) is connected!", ready.user.name, ready.user.id);
@@ -87,17 +86,9 @@ impl EventHandler for Handler {
                     eprintln!("Couldn't delete reaction: {:?}", e);
                 }
 
-                let channel: PrivateChannel = rxn.user_id.create_dm_channel(&ctx).expect("Error while creating DM channel.");
+                let mut channel: PrivateChannel = rxn.user_id.create_dm_channel(&ctx).expect("Error while creating DM channel.");
 
-                if let Some(resp) = check_guest_presence(&mut ctx, rxn.user_id, guild_id) {
-                    if let Err(x) = channel.send_message(&ctx, |msg: &mut CreateMessage| {
-                        resp.send(msg)
-                    }) {
-                        eprintln!("Error '{:?}' while sending response.", x);
-                    }
-                } else {
-                    // guest assignment goes HERE
-                }
+                execute_guest(&mut ctx, rxn.user_id, guild_id, &mut channel);
             }
         }
     }
@@ -109,7 +100,23 @@ fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
     }
 }
 
-fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<GuestResponse> {
+fn execute_guest(ctx: &mut Context, uid: UserId, gid: GuildId, ch: &mut PrivateChannel) {
+    let resp_first = check_guest_presence(ctx, &uid, &gid);
+
+    let resp = match resp_first {
+        Some(v) => v,
+        None => GuestResponse::Sucess(SystemTime::now())
+    };
+
+    if let Err(error) = ch.send_message(ctx, |msg: &mut CreateMessage| {
+        resp.send(msg)
+    }) {
+        eprintln!("Error '{}' while sending priate message.", &error);
+    }
+}
+
+// Checks presence of guest role on a user and returns None when the user is eligible for one. Returns Some(_) with response to send back to the user.
+fn check_guest_presence(ctx: &mut Context, uid: &UserId, gid: &GuildId) -> Option<GuestResponse> {
     let s_gid = gid.0 as i64;
     let s_uid = uid.0 as i64;
 
@@ -129,7 +136,7 @@ fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<
         Err(x) => {
             if let SqliteError::QueryReturnedNoRows = x {
 
-                return Some(GuestResponse::AlreadyOver(SystemTime::now()));
+                return None;
             } else {
                 eprintln!("Error '{:?}' while reading database.", x);
                 return Some(GuestResponse::ErrorReadingDatabase);
