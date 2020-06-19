@@ -95,8 +95,8 @@ impl EventHandler for Handler {
 }
 
 fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
-    if let Err(x) = msg.channel_id.say(&ctx, format!("Command `{}` not found.", cmd)) {
-        eprintln!("Error '{:?}' while sending reply in {}.", &x, msg.channel_id);
+    if let Err(error) = msg.channel_id.say(&ctx, format!("Command `{}` not found.", cmd)) {
+        eprintln!("Error '{:?}' while sending reply in {}.", &error, msg.channel_id);
     }
 }
 
@@ -105,7 +105,7 @@ fn execute_guest(ctx: &mut Context, uid: UserId, gid: GuildId, ch: &mut PrivateC
 
     let resp = match resp_first {
         Some(v) => v,
-        None => GuestResponse::Sucess(SystemTime::now())
+        None => GuestResponse::Sucess(SystemTime::now()) // TODO: Actual role assignment.
     };
 
     if let Err(error) = ch.send_message(ctx, |msg: &mut CreateMessage| {
