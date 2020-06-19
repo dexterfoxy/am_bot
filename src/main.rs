@@ -1,9 +1,7 @@
 extern crate ctrlc;
 
-mod unwrap_ext;
 mod response_creator;
 
-use crate::unwrap_ext::*;
 use crate::response_creator::*;
 
 use std::{
@@ -52,7 +50,7 @@ static mut DB: Option<Mutex<Connection>> = None;
 // Simple wrapper to avoid ugly unsafe blocks
 #[inline(always)]
 fn get_db(_l: impl AsRef<RwLock<ShareMap>>) -> &'static Mutex<Connection> {
-    unsafe {DB.unwrap_ref()} // Our own custom wrapper
+    unsafe {DB.as_ref().unwrap()} // Our own custom wrapper
 }
 
 impl EventHandler for Handler {
