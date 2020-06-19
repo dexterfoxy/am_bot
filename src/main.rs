@@ -132,24 +132,19 @@ fn check_guest_presence(ctx: &mut Context, uid: &UserId, gid: &GuildId) -> Optio
         })
     };
 
-    match result {
+    return match result {
         Err(x) => {
             if let SqliteError::QueryReturnedNoRows = x {
-
-                return None;
+                None
             } else {
                 eprintln!("Error '{:?}' while reading database.", x);
-                return Some(GuestResponse::ErrorReadingDatabase);
+                Some(GuestResponse::ErrorReadingDatabase)
             }
         },
         Ok(output) => {
-            return Some(if output.1 {
-                GuestResponse::AlreadyOver(output.0)
-            } else {
-                GuestResponse::AlreadyGuest(output.0)
-            });
+            Some(GuestResponse::from(output))
         }
-    }
+    };
 }
 
 fn main() {
