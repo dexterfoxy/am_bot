@@ -10,6 +10,7 @@ checksum = "5d2e7343e7fc9de883d1b0341e0b13970f764c14101234857d2ddafa1cb1cac2"
 name = "am_bot"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "ctrlc",
  "rusqlite",
  "serenity",

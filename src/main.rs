@@ -1,8 +1,10 @@
 extern crate ctrlc;
 
 mod unwrap_ext;
+mod response_creator;
 
 use crate::unwrap_ext::*;
+use crate::response_creator::*;
 
 use std::{
     env,
@@ -26,14 +28,15 @@ type SqliteError     = rusqlite::Error;
 use serenity::{
     prelude::*,
     model::{
-        channel::{Message, Reaction},
+        channel::{Message, Reaction, PrivateChannel},
         gateway::{Ready, Activity},
         id::{UserId, GuildId, MessageId}
     },
     framework::standard::{
         StandardFramework, CommandResult,
         macros::{command, group}
-    }
+    },
+    builder::CreateMessage
 };
 
 #[group]
@@ -58,7 +61,7 @@ impl EventHandler for Handler {
         ctx.set_activity(Activity::playing("with cat toys")); // TODO: Database entry for this
     }
 
-    fn reaction_add(&self, ctx: Context, rxn: Reaction) {
+    fn reaction_add(&self, mut ctx: Context, rxn: Reaction) {
         let current_user = ctx.http.get_current_user().expect("Error while getting user info.");
         if current_user.id == rxn.user_id {
             return;
@@ -86,23 +89,17 @@ impl EventHandler for Handler {
                     eprintln!("Couldn't delete reaction: {:?}", e);
                 }
 
-                let msg_fn: Box<dyn Fn(&str)> = match rxn.user_id.create_dm_channel(&ctx) {
-                    Err(x) => {
-                        eprintln!("Error '{:?}' while creating DM channel for user {}.", x, rxn.user_id);
-                        Box::from(|_: &str| {})
-                    },
-                    Ok(channel) => {
-                        let http_c = ctx.http.clone();
-                        let user_id_c = rxn.user_id.clone();
-                        Box::from(move |msg: &str| {
-                            if let Err(x) = channel.say(&http_c, msg) {
-                                eprintln!("Error '{:?}' while sending message into DM with user {}.", x, user_id_c);
-                            }
-                        })
-                    }
-                }; // TODO: Get rid of the fuckery above and make a function for it
+                let channel: PrivateChannel = rxn.user_id.create_dm_channel(&ctx).expect("Error while creating DM channel.");
 
-                assign_guest(ctx, rxn.user_id, guild_id, msg_fn);
+                if let Some(resp) = check_guest_presence(&mut ctx, rxn.user_id, guild_id) {
+                    if let Err(x) = channel.send_message(&ctx, |msg: &mut CreateMessage| {
+                        resp.send(msg)
+                    }) {
+                        eprintln!("Error '{:?}' while sending response.", x);
+                    }
+                } else {
+                    // guest assignment goes HERE
+                }
             }
         }
     }
@@ -110,15 +107,13 @@ impl EventHandler for Handler {
 
 fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
     if let Err(x) = msg.channel_id.say(&ctx, format!("Command `{}` not found.", cmd)) {
-        eprintln!("Error '{:?}' while sending reply in {}.", x, msg.channel_id);
+        eprintln!("Error '{:?}' while sending reply in {}.", &x, msg.channel_id);
     }
 }
 
-fn assign_guest(ctx: Context, uid: UserId, gid: GuildId, f: impl Fn(&str)) {
+fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<GuestResponse> {
     let s_gid = gid.0 as i64;
     let s_uid = uid.0 as i64;
-
-    println!("{} {}", s_gid, s_uid);
 
     let db_lock = get_db(&ctx.data).lock().expect("Couldn't lock the database.");
     
@@ -132,14 +127,23 @@ fn assign_guest(ctx: Context, uid: UserId, gid: GuildId, f: impl Fn(&str)) {
         })
     };
 
-    if let Err(x) = result {
-        if let SqliteError::QueryReturnedNoRows = x {
+    match result {
+        Err(x) => {
+            if let SqliteError::QueryReturnedNoRows = x {
 
-        } else {
-            panic!("Error '{}' while reading database.", x);
+                return Some(GuestResponse::AlreadyOver(SystemTime::now()));
+            } else {
+                eprintln!("Error '{:?}' while reading database.", x);
+                return Some(GuestResponse::ErrorReadingDatabase);
+            }
+        },
+        Ok(output) => {
+            return Some(if output.1 {
+                GuestResponse::AlreadyOver(output.0)
+            } else {
+                GuestResponse::AlreadyGuest(output.0)
+            });
         }
-    } else {
-        f("Sorry, but you cannot request guest access more than once on a single guild.");
     }
 }
 

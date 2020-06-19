@@ -18,3 +18,14 @@ impl<T> ExpectExt for Option<T> {
         }
     }
 }
+
+impl<T, U> ExpectExt for Result<T, U> {
+    type Output = T;
+
+    fn expect_ref(&self, msg: &str) -> &Self::Output {
+        match self {
+            Ok(x) => x,
+            Err(_) => panic!("{}", msg)
+        }
+    }
+}
