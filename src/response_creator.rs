@@ -10,8 +10,9 @@ use chrono::prelude::*;
 pub enum GuestResponse {
     AlreadyOver(SystemTime),
     AlreadyGuest(SystemTime),
+    AlreadyHasMember,
+    ErrorReadingDatabase,
     Sucess(SystemTime),
-    ErrorReadingDatabase
 }
 
 #[inline(always)]
@@ -50,6 +51,13 @@ impl GuestResponse {
                 msg.embed(|emb: &mut CreateEmbed| {
                     embed_failure(emb).description(
                         "An error occured while reading the database. Your guest role has not been added."
+                    )
+                });
+            },
+            Self::AlreadyHasMember => {
+                msg.embed(|emb: &mut CreateEmbed| {
+                    embed_failure(emb).description(
+                        "Error! You are already a member."
                     )
                 });
             },
