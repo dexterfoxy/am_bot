@@ -103,10 +103,7 @@ fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
 fn execute_guest(ctx: &mut Context, uid: UserId, gid: GuildId, ch: &mut PrivateChannel) {
     let resp_first = check_guest_presence(ctx, &uid, &gid);
 
-    let resp = match resp_first {
-        Some(v) => v,
-        None => GuestResponse::Sucess(SystemTime::now()) // TODO: Actual role assignment.
-    };
+    let resp = resp_first.unwrap_or_else(|| assign_guest(ctx, &uid, &gid));
 
     if let Err(error) = ch.send_message(ctx, |msg: &mut CreateMessage| {
         resp.send(msg)
@@ -145,6 +142,11 @@ fn check_guest_presence(ctx: &mut Context, uid: &UserId, gid: &GuildId) -> Optio
             Some(GuestResponse::from(output))
         }
     };
+}
+
+fn assign_guest(_ctx: &mut Context, _uid: &UserId, _gid: &GuildId) -> GuestResponse {
+
+    GuestResponse::Sucess(SystemTime::now())
 }
 
 fn main() {
