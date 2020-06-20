@@ -1,8 +1,8 @@
 use std::time::SystemTime;
 
 use serenity::{
+    builder::{CreateEmbed, CreateMessage},
     utils::Color,
-    builder::{CreateMessage, CreateEmbed}
 };
 
 use chrono::prelude::*;
@@ -35,39 +35,40 @@ impl GuestResponse {
         match self {
             Self::AlreadyOver(exp) => {
                 msg.embed(|emb: &mut CreateEmbed| {
-                    embed_failure(emb).description(
-                        format!("Error! Your guest role has expired on {}.", DateTime::<Local>::from(*exp))
-                    )
+                    embed_failure(emb).description(format!(
+                        "Error! Your guest role has expired on {}.",
+                        DateTime::<Local>::from(*exp)
+                    ))
                 });
-            },
+            }
             Self::AlreadyGuest(exp) => {
                 msg.embed(|emb: &mut CreateEmbed| {
-                    embed_failure(emb).description(
-                        format!("Error! You already have the guest role. It will expire on {}.", DateTime::<Local>::from(*exp))
-                    )
+                    embed_failure(emb).description(format!(
+                        "Error! You already have the guest role. It will expire on {}.",
+                        DateTime::<Local>::from(*exp)
+                    ))
                 });
-            },
+            }
             Self::InternalError => {
                 msg.embed(|emb: &mut CreateEmbed| {
                     embed_failure(emb).description(
                         "An internal error occured while processing the request. Your guest role ha snot been added."
                     )
                 });
-            },
+            }
             Self::AlreadyHasMember => {
                 msg.embed(|emb: &mut CreateEmbed| {
-                    embed_failure(emb).description(
-                        "Error! You are already a member."
-                    )
+                    embed_failure(emb).description("Error! You are already a member.")
                 });
-            },
+            }
             Self::Sucess(exp) => {
                 msg.embed(|emb: &mut CreateEmbed| {
-                    embed_success(emb).description(
-                        format!("Success! You have been given the guest role. It will expire on {}.", DateTime::<Local>::from(*exp))
-                    )
-                }); 
-            },
+                    embed_success(emb).description(format!(
+                        "Success! You have been given the guest role. It will expire on {}.",
+                        DateTime::<Local>::from(*exp)
+                    ))
+                });
+            }
         };
         msg
     }
@@ -77,7 +78,7 @@ impl From<(SystemTime, bool)> for GuestResponse {
     fn from(x: (SystemTime, bool)) -> Self {
         match x.1 {
             true => Self::AlreadyOver(x.0),
-            false => Self::AlreadyGuest(x.0)
+            false => Self::AlreadyGuest(x.0),
         }
     }
 }
