@@ -6,18 +6,21 @@ use crate::response_creator::*;
 
 use std::{
     env,
-    sync::{
-        Mutex, Arc
-    },
+    sync::Arc,
     time::{
         Duration,
         SystemTime
     }
 };
 
+use parking_lot::{
+    Mutex
+};
+
 use rusqlite::{
     params,
-    Connection
+    Connection,
+    Row
 };
 
 type SqliteResult<T> = rusqlite::Result<T>;
@@ -72,10 +75,10 @@ impl EventHandler for Handler {
         let s_gid = guild_id.0 as i64;
 
         let result = {
-            let db_lock = get_db(&ctx.data).lock().expect("Error while locking DB.");
+            let db_lock = get_db(&ctx.data).lock();
 
             let mut stmt = db_lock.prepare("SELECT message_id FROM guild_configs WHERE guild_id = ?1").expect("Prepare failed.");
-            stmt.query_row(params![s_gid], |row| -> SqliteResult<MessageId> {
+            stmt.query_row(params![s_gid], |row: &Row| -> SqliteResult<MessageId> {
                 row.get::<_, i64>(0).map(|x: i64| MessageId(x as u64))
             })
         };
@@ -117,11 +120,11 @@ fn check_guest_presence(ctx: &mut Context, uid: &UserId, gid: &GuildId) -> Optio
     let s_gid = gid.0 as i64;
     let s_uid = uid.0 as i64;
 
-    let db_lock = get_db(&ctx.data).lock().expect("Couldn't lock the database.");
+    let db_lock = get_db(&ctx.data).lock();
     
     let result = {
         let mut stmt = db_lock.prepare("SELECT timestamp, expired FROM guests WHERE guild_id = ?1 AND user_id = ?2").expect("Error while preparing statement.");
-        stmt.query_row(params![s_gid, s_uid], |row| -> SqliteResult<(SystemTime, bool)> {
+        stmt.query_row(params![s_gid, s_uid], |row: &Row| -> SqliteResult<(SystemTime, bool)> {
             Ok((
                 SystemTime::UNIX_EPOCH + Duration::from_secs(row.get::<_, i64>(0)? as u64),
                 row.get::<_, i64>(1)? != 0
@@ -145,7 +148,6 @@ fn check_guest_presence(ctx: &mut Context, uid: &UserId, gid: &GuildId) -> Optio
 }
 
 fn assign_guest(_ctx: &mut Context, _uid: &UserId, _gid: &GuildId) -> GuestResponse {
-
     GuestResponse::Sucess(SystemTime::now())
 }
 
