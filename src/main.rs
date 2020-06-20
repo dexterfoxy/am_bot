@@ -122,14 +122,9 @@ fn execute_guest(ctx: &mut Context, uid: UserId, gid: GuildId, rid: RoleId, ch: 
 
 // Checks presence of guest role on a user and returns None when the user is eligible for one. Returns Some(_) with response to send back to the user.
 fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<GuestResponse> {
-    {
-        let member = gid.member(&ctx, uid).expect("Error while getting member.");
 
-        let has_role = member.roles(&ctx).map_or(false, |vec| !vec.is_empty());
-
-        if has_role {
-           return Some(GuestResponse::AlreadyHasMember);
-        }
+    if gid.member(&ctx, uid).expect("Error while getting member.").roles(&ctx).map_or(false, |vec| !vec.is_empty()) {
+        return Some(GuestResponse::AlreadyHasMember);
     }
 
     let s_gid = gid.0 as i64;
@@ -147,7 +142,7 @@ fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<
         })
     };
 
-    mem::drop(db_lock);
+    mem::drop(db_lock); // Explicit drop if we ever need to extend this function
 
     match result {
         Err(x) => {
