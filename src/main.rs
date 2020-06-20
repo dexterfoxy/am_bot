@@ -77,21 +77,24 @@ impl EventHandler for Handler {
         let result = {
             let db_lock = get_db(&ctx.data).lock();
 
-            let mut stmt = db_lock.prepare("SELECT message_id FROM guild_configs WHERE guild_id = ?1").expect("Prepare failed.");
-            stmt.query_row(params![s_gid], |row: &Row| -> SqliteResult<MessageId> {
-                row.get::<_, i64>(0).map(|x: i64| MessageId(x as u64))
+            let mut stmt = db_lock.prepare("SELECT message_id, guest_duration FROM guild_configs WHERE guild_id = ?1").expect("Prepare failed.");
+            stmt.query_row(params![s_gid], |row: &Row| -> SqliteResult<(MessageId, Duration)> {
+                Ok((
+                    row.get::<_, i64>(0).map(|x: i64| MessageId(x as u64))?, 
+                    Duration::from_secs(row.get::<_,i64>(1)? as u64)
+                ))
             })
         };
 
         if let Ok(x) = result {
-            if x == rxn.message_id {
+            if x.0 == rxn.message_id {
                 if let Err(e) = rxn.delete(&ctx) {
                     eprintln!("Couldn't delete reaction: {:?}", e);
                 }
 
                 let mut channel: PrivateChannel = rxn.user_id.create_dm_channel(&ctx).expect("Error while creating DM channel.");
 
-                execute_guest(&mut ctx, rxn.user_id, guild_id, &mut channel);
+                execute_guest(&mut ctx, rxn.user_id, guild_id, &mut channel, &x.1);
             }
         }
     }
@@ -103,10 +106,10 @@ fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
     }
 }
 
-fn execute_guest(ctx: &mut Context, uid: UserId, gid: GuildId, ch: &mut PrivateChannel) {
+fn execute_guest(ctx: &mut Context, uid: UserId, gid: GuildId, ch: &mut PrivateChannel, dur: Duration) {
     let resp_first = check_guest_presence(ctx, &uid, &gid);
 
-    let resp = resp_first.unwrap_or_else(|| assign_guest(ctx, &uid, &gid));
+    let resp = resp_first.unwrap_or_else(|| assign_guest(ctx, &uid, &gid, dur));
 
     if let Err(error) = ch.send_message(ctx, |msg: &mut CreateMessage| {
         resp.send(msg)
@@ -147,7 +150,7 @@ fn check_guest_presence(ctx: &mut Context, uid: &UserId, gid: &GuildId) -> Optio
     }
 }
 
-fn assign_guest(_ctx: &mut Context, _uid: &UserId, _gid: &GuildId) -> GuestResponse {
+fn assign_guest(_ctx: &mut Context, _uid: &UserId, _gid: &GuildId, dur: Duration) -> GuestResponse {
     GuestResponse::Sucess(SystemTime::now())
 }
 
