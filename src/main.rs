@@ -132,7 +132,7 @@ fn check_guest_presence(ctx: &mut Context, uid: &UserId, gid: &GuildId) -> Optio
         })
     };
 
-    return match result {
+    match result {
         Err(x) => {
             if let SqliteError::QueryReturnedNoRows = x {
                 None
@@ -144,7 +144,7 @@ fn check_guest_presence(ctx: &mut Context, uid: &UserId, gid: &GuildId) -> Optio
         Ok(output) => {
             Some(GuestResponse::from(output))
         }
-    };
+    }
 }
 
 fn assign_guest(_ctx: &mut Context, _uid: &UserId, _gid: &GuildId) -> GuestResponse {
