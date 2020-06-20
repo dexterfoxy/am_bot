@@ -31,7 +31,7 @@ use serenity::{
     model::{
         channel::{Message, Reaction, PrivateChannel},
         gateway::{Ready, Activity},
-        id::{UserId, GuildId, MessageId}
+        id::{UserId, GuildId, MessageId, RoleId}
     },
     framework::standard::{
         StandardFramework, CommandResult,
@@ -77,11 +77,12 @@ impl EventHandler for Handler {
         let result = {
             let db_lock = get_db(&ctx.data).lock();
 
-            let mut stmt = db_lock.prepare("SELECT message_id, guest_duration FROM guild_configs WHERE guild_id = ?1").expect("Prepare failed.");
-            stmt.query_row(params![s_gid], |row: &Row| -> SqliteResult<(MessageId, Duration)> {
+            let mut stmt = db_lock.prepare("SELECT message_id, role_id, guest_duration FROM guild_configs WHERE guild_id = ?1").expect("Prepare failed.");
+            stmt.query_row(params![s_gid], |row: &Row| -> SqliteResult<(MessageId, RoleId, Duration)> {
                 Ok((
-                    row.get::<_, i64>(0).map(|x: i64| MessageId(x as u64))?, 
-                    Duration::from_secs(row.get::<_,i64>(1)? as u64)
+                    MessageId::from(row.get::<_, i64>(0)? as u64),
+                    RoleId::from(row.get::<_, i64>(1)? as u64),
+                    Duration::from_secs(row.get::<_,i64>(2)? as u64)
                 ))
             })
         };
@@ -94,7 +95,7 @@ impl EventHandler for Handler {
 
                 let mut channel: PrivateChannel = rxn.user_id.create_dm_channel(&ctx).expect("Error while creating DM channel.");
 
-                execute_guest(&mut ctx, rxn.user_id, guild_id, &mut channel, x.1);
+                execute_guest(&mut ctx, rxn.user_id, guild_id, x.1, &mut channel, x.2);
             }
         }
     }
@@ -106,10 +107,10 @@ fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
     }
 }
 
-fn execute_guest(ctx: &mut Context, uid: UserId, gid: GuildId, ch: &mut PrivateChannel, dur: Duration) {
+fn execute_guest(ctx: &mut Context, uid: UserId, gid: GuildId, rid: RoleId, ch: &mut PrivateChannel, dur: Duration) {
     let resp_first = check_guest_presence(ctx, uid, gid);
 
-    let resp = resp_first.unwrap_or_else(|| assign_guest(ctx, uid, gid, dur));
+    let resp = resp_first.unwrap_or_else(|| assign_guest(ctx, uid, gid, rid, dur));
 
     if let Err(error) = ch.send_message(ctx, |msg: &mut CreateMessage| {
         resp.send(msg)
@@ -141,7 +142,7 @@ fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<
                 None
             } else {
                 eprintln!("Error '{:?}' while reading database.", x);
-                Some(GuestResponse::ErrorReadingDatabase)
+                Some(GuestResponse::InternalError)
             }
         },
         Ok(output) => {
@@ -150,8 +151,15 @@ fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<
     }
 }
 
-fn assign_guest(ctx: &mut Context, uid: UserId, gid: GuildId, dur: Duration) -> GuestResponse {
+fn assign_guest(ctx: &mut Context, uid: UserId, gid: GuildId, rid: RoleId, dur: Duration) -> GuestResponse {
     let expiration = SystemTime::now() + dur;
+
+    let mut member = gid.member(&ctx, uid).expect("Error while getting member.");
+
+    if let Err(error) = member.add_role(&ctx, rid) {
+        eprintln!("Error '{:?}' while setting member role.", &error);
+        return GuestResponse::InternalError;
+    }
 
     GuestResponse::Sucess(expiration)
 }

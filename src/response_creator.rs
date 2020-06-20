@@ -11,7 +11,7 @@ pub enum GuestResponse {
     AlreadyOver(SystemTime),
     AlreadyGuest(SystemTime),
     AlreadyHasMember,
-    ErrorReadingDatabase,
+    InternalError,
     Sucess(SystemTime),
 }
 
@@ -47,10 +47,10 @@ impl GuestResponse {
                     )
                 });
             },
-            Self::ErrorReadingDatabase => {
+            Self::InternalError => {
                 msg.embed(|emb: &mut CreateEmbed| {
                     embed_failure(emb).description(
-                        "An error occured while reading the database. Your guest role has not been added."
+                        "An internal error occured while processing the request. Your guest role ha snot been added."
                     )
                 });
             },
