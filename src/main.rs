@@ -157,7 +157,7 @@ fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<
 fn assign_guest(ctx: &mut Context, uid: UserId, gid: GuildId, rid: RoleId, dur: Duration) -> GuestResponse {
     let mut member = gid.member(&ctx, uid).expect("Error while getting member.");
 
-    let has_role = member.roles(&ctx).map_or(false, |vec| vec.is_empty());
+    let has_role = member.roles(&ctx).map_or(false, |vec| !vec.is_empty());
 
     if has_role {
         return GuestResponse::AlreadyHasMember;
