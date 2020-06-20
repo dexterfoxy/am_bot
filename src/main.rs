@@ -6,6 +6,7 @@ use crate::response_creator::*;
 
 use std::{
     env,
+    mem,
     sync::Arc,
     time::{
         Duration,
@@ -136,6 +137,8 @@ fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<
         })
     };
 
+    mem::drop(db_lock);
+
     match result {
         Err(x) => {
             if let SqliteError::QueryReturnedNoRows = x {
@@ -152,9 +155,20 @@ fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<
 }
 
 fn assign_guest(ctx: &mut Context, uid: UserId, gid: GuildId, rid: RoleId, dur: Duration) -> GuestResponse {
-    let expiration = SystemTime::now() + dur;
-
     let mut member = gid.member(&ctx, uid).expect("Error while getting member.");
+
+    let roles = member.roles(&ctx);
+
+    let has_role = match roles {
+        Some(vec) => vec.is_empty(),
+        None => false
+    };
+
+    if has_role {
+        return GuestResponse::AlreadyHasMember;
+    }
+
+    let expiration = SystemTime::now() + dur;
 
     if let Err(error) = member.add_role(&ctx, rid) {
         eprintln!("Error '{:?}' while setting member role.", &error);
