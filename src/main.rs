@@ -94,7 +94,7 @@ impl EventHandler for Handler {
 
                 let mut channel: PrivateChannel = rxn.user_id.create_dm_channel(&ctx).expect("Error while creating DM channel.");
 
-                execute_guest(&mut ctx, rxn.user_id, guild_id, &mut channel, &x.1);
+                execute_guest(&mut ctx, rxn.user_id, guild_id, &mut channel, x.1);
             }
         }
     }
@@ -107,9 +107,9 @@ fn invalid_command(ctx: &mut Context, msg: &Message, cmd: &str) {
 }
 
 fn execute_guest(ctx: &mut Context, uid: UserId, gid: GuildId, ch: &mut PrivateChannel, dur: Duration) {
-    let resp_first = check_guest_presence(ctx, &uid, &gid);
+    let resp_first = check_guest_presence(ctx, uid, gid);
 
-    let resp = resp_first.unwrap_or_else(|| assign_guest(ctx, &uid, &gid, dur));
+    let resp = resp_first.unwrap_or_else(|| assign_guest(ctx, uid, gid, dur));
 
     if let Err(error) = ch.send_message(ctx, |msg: &mut CreateMessage| {
         resp.send(msg)
@@ -119,7 +119,7 @@ fn execute_guest(ctx: &mut Context, uid: UserId, gid: GuildId, ch: &mut PrivateC
 }
 
 // Checks presence of guest role on a user and returns None when the user is eligible for one. Returns Some(_) with response to send back to the user.
-fn check_guest_presence(ctx: &mut Context, uid: &UserId, gid: &GuildId) -> Option<GuestResponse> {
+fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<GuestResponse> {
     let s_gid = gid.0 as i64;
     let s_uid = uid.0 as i64;
 
@@ -150,8 +150,10 @@ fn check_guest_presence(ctx: &mut Context, uid: &UserId, gid: &GuildId) -> Optio
     }
 }
 
-fn assign_guest(_ctx: &mut Context, _uid: &UserId, _gid: &GuildId, dur: Duration) -> GuestResponse {
-    GuestResponse::Sucess(SystemTime::now())
+fn assign_guest(ctx: &mut Context, uid: UserId, gid: GuildId, dur: Duration) -> GuestResponse {
+    let expiration = SystemTime::now() + dur;
+
+    GuestResponse::Sucess(expiration)
 }
 
 fn main() {
