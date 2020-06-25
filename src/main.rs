@@ -146,15 +146,14 @@ fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<
 
     let result = {
         let mut stmt = db_lock
-            .prepare("SELECT timestamp, expired FROM guests WHERE guild_id = ?1 AND user_id = ?2")
+            .prepare("SELECT timestamp FROM guests WHERE guild_id = ?1 AND user_id = ?2")
             .expect("Error while preparing statement.");
         stmt.query_row(
             params![s_gid, s_uid],
-            |row: &Row| -> SqliteResult<(SystemTime, bool)> {
-                Ok((
-                    SystemTime::UNIX_EPOCH + Duration::from_secs(row.get::<_, i64>(0)? as u64),
-                    row.get::<_, i64>(1)? != 0,
-                ))
+            |row: &Row| -> SqliteResult<SystemTime> {
+                Ok(
+                    SystemTime::UNIX_EPOCH + Duration::from_secs(row.get::<_, i64>(0)? as u64)
+                )
             },
         )
     };
@@ -170,7 +169,7 @@ fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<
                 Some(GuestResponse::InternalError)
             }
         }
-        Ok(output) => Some(GuestResponse::from(output)),
+        Ok(output) => Some(GuestResponse::present(output)),
     }
 }
 
@@ -184,6 +183,28 @@ fn assign_guest(
     let mut member = gid.member(&ctx, uid).expect("Error while getting member.");
 
     let expiration = SystemTime::now() + dur;
+
+    {
+        let db_lock = get_db(&ctx.data).lock();
+
+        let mut stmt = db_lock
+            .prepare("INSERT INTO guests (guild_id, user_id, timestamp) VALUES (?1, ?2, ?3)")
+            .expect("Error while creating statement.");
+
+        let timestamp = expiration
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("Error while creating timestamp.")
+            .as_secs()
+            as i64;
+
+        let s_gid = gid.0 as i64;
+        let s_uid = uid.0 as i64;
+
+        if let Err(error) = stmt.execute(params![s_gid, s_uid, timestamp]) {
+            eprintln!("Error '{:?}' while executing insert query.", &error);
+            return GuestResponse::InternalError;
+        }
+    }
 
     if let Err(error) = member.add_role(&ctx, rid) {
         eprintln!("Error '{:?}' while setting member role.", &error);

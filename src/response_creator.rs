@@ -31,6 +31,13 @@ fn embed_success(emb: &mut CreateEmbed) -> &mut CreateEmbed {
 }
 
 impl GuestResponse {
+    pub fn present(x: SystemTime) -> Self {
+        match x >= SystemTime::now() {
+            true => Self::AlreadyOver(x),
+            false => Self::AlreadyGuest(x)
+        }
+    }
+
     pub fn send<'a, 'b>(&self, msg: &'a mut CreateMessage<'b>) -> &'a mut CreateMessage<'b> {
         match self {
             Self::AlreadyOver(exp) => {
@@ -71,14 +78,5 @@ impl GuestResponse {
             }
         };
         msg
-    }
-}
-
-impl From<(SystemTime, bool)> for GuestResponse {
-    fn from(x: (SystemTime, bool)) -> Self {
-        match x.1 {
-            true => Self::AlreadyOver(x.0),
-            false => Self::AlreadyGuest(x.0),
-        }
     }
 }
