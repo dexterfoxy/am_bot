@@ -1,5 +1,3 @@
-extern crate ctrlc;
-
 mod response_creator;
 
 use crate::response_creator::*;
@@ -10,9 +8,13 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, Condvar};
 
 use rusqlite::{params, Connection, Row};
+
+use lazy_static::lazy_static;
+
+extern crate ctrlc;
 
 type SqliteResult<T> = rusqlite::Result<T>;
 type SqliteError = rusqlite::Error;
@@ -35,15 +37,21 @@ use serenity::{
 #[commands(ping)]
 struct UserManagement;
 
-// This ain't perfect, there's non-static data storage in our client.
-// However, ICBF to switch to that. get_db has an unused parameter for the time being.
-static mut DB: Option<Mutex<Connection>> = None;
+lazy_static! {
+    static ref DB: Mutex<Connection> = {
+        let db_file = env::var("DB_FILE")
+            .expect("Error while reading DB_FILE! Set the environment variable.");
+
+        Mutex::from(
+            Connection::open(db_file).expect("Error while reading database.")
+        )
+    };
+
+    static ref GUEST_CONDVAR_MUTEX: Mutex<()> = Mutex::default();
+    static ref GUEST_CONDVAR: Condvar = Condvar::default();
+}
 
 // Simple wrapper to avoid ugly unsafe blocks
-#[inline(always)]
-fn get_db(_: impl AsRef<RwLock<ShareMap>>) -> &'static Mutex<Connection> {
-    unsafe { DB.as_ref().unwrap() }
-}
 
 struct Handler;
 impl EventHandler for Handler {
@@ -68,7 +76,7 @@ impl EventHandler for Handler {
         let s_gid = guild_id.0 as i64;
 
         let result = {
-            let db_lock = get_db(&ctx.data).lock();
+            let db_lock = DB.lock();
 
             let mut stmt = db_lock.prepare("SELECT message_id, role_id, guest_duration FROM guild_configs WHERE guild_id = ?1").expect("Prepare failed.");
             stmt.query_row(
@@ -142,7 +150,7 @@ fn check_guest_presence(ctx: &mut Context, uid: UserId, gid: GuildId) -> Option<
     let s_gid = gid.0 as i64;
     let s_uid = uid.0 as i64;
 
-    let db_lock = get_db(&ctx.data).lock();
+    let db_lock = DB.lock();
 
     let result = {
         let mut stmt = db_lock
@@ -185,7 +193,7 @@ fn assign_guest(
     let expiration = SystemTime::now() + dur;
 
     {
-        let db_lock = get_db(&ctx.data).lock();
+        let db_lock = DB.lock();
 
         let mut stmt = db_lock
             .prepare("INSERT INTO guests (guild_id, user_id, timestamp) VALUES (?1, ?2, ?3)")
@@ -218,17 +226,6 @@ fn main() {
     // Environment variables to avoid hardcoding
     let token = env::var("DISCORD_TOKEN")
         .expect("Error while reading DISCORD_TOKEN! Set the environment variable.");
-    let db_file = env::var("DB_FILE")
-        .expect("Error while reading DB_FILE! Set the environment variable.");
-
-    // Unsafe block needed for assignment
-    // Wrapper function above for easy mutex access
-    // Gonna be replaced with a better solution anyway
-    unsafe {
-        DB = Some(Mutex::from(
-            Connection::open(db_file).expect("Error while opening database."),
-        ));
-    }
 
     // Token is never stored on disk
     let mut client = Client::new(&token, Handler {/* Nothing here at the moment */})

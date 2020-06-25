@@ -12,6 +12,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "ctrlc",
+ "lazy_static",
  "parking_lot 0.10.2",
  "rusqlite",
  "serenity",
