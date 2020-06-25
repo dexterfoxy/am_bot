@@ -212,6 +212,8 @@ fn assign_guest(
             eprintln!("Error '{:?}' while executing insert query.", &error);
             return GuestResponse::InternalError;
         }
+
+        assert!(GUEST_CONDVAR.notify_one());
     }
 
     if let Err(error) = member.add_role(&ctx, rid) {
