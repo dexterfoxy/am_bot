@@ -1,6 +1,8 @@
 mod response_creator;
-
 use crate::response_creator::*;
+
+mod waiter;
+use crate::waiter::*;
 
 use std::{
     env, mem,
@@ -38,7 +40,7 @@ use serenity::{
 struct UserManagement;
 
 lazy_static! {
-    static ref DB: Mutex<Connection> = {
+    pub(crate) static ref DB: Mutex<Connection> = {
         let db_file = env::var("DB_FILE")
             .expect("Error while reading DB_FILE! Set the environment variable.");
 
@@ -47,8 +49,8 @@ lazy_static! {
         )
     };
 
-    static ref GUEST_CONDVAR_MUTEX: Mutex<()> = Mutex::default();
-    static ref GUEST_CONDVAR: Condvar = Condvar::default();
+    pub(crate) static ref GUEST_CONDVAR_MUTEX: Mutex<()> = Mutex::default();
+    pub(crate) static ref GUEST_CONDVAR: Condvar = Condvar::default();
 }
 
 // Simple wrapper to avoid ugly unsafe blocks
@@ -228,10 +230,13 @@ fn main() {
     // Environment variables to avoid hardcoding
     let token = env::var("DISCORD_TOKEN")
         .expect("Error while reading DISCORD_TOKEN! Set the environment variable.");
-
+    
     // Token is never stored on disk
     let mut client = Client::new(&token, Handler {/* Nothing here at the moment */})
         .expect("Error while creating client.");
+
+    let http_c = Arc::clone(&client.cache_and_http.http);
+    let _waiter_handle = std::thread::Builder::new().name("waiter".into()).spawn(move || waiter_loop(http_c)).expect("Error while creating waiter thread.");
 
     client.with_framework(
         StandardFramework::new()
